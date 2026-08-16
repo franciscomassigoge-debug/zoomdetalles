@@ -98,11 +98,14 @@ function parsearWorkbook(wb) {
 function poblarFiltros() {
   const clientes = [...new Set(registros.map((r) => r.cliente))].sort((a, b) => a.localeCompare(b, "es"));
   const establecimientos = [...new Set(registros.map((r) => r.establecimiento).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const tipos = [...new Set(registros.map((r) => r.tipo).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
 
   const selCliente = document.getElementById("filtroCliente");
   const selEst = document.getElementById("filtroEstablecimiento");
+  const selTipo = document.getElementById("filtroTipo");
   selCliente.innerHTML = clientes.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
   selEst.innerHTML = establecimientos.map((e) => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join("");
+  selTipo.innerHTML = tipos.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
 }
 
 function escapeHtml(s) {
@@ -154,12 +157,14 @@ document.getElementById("btnBuscar").addEventListener("click", async () => {
   const hasta = document.getElementById("filtroHasta").value ? new Date(document.getElementById("filtroHasta").value + "T23:59:59Z") : null;
   const clientesSel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
   const estSel = Array.from(document.getElementById("filtroEstablecimiento").selectedOptions).map((o) => o.value);
+  const tipoSel = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
 
   let filtrados = registros.filter((r) => {
     if (desde && r.fecha < desde) return false;
     if (hasta && r.fecha > hasta) return false;
     if (clientesSel.length && !clientesSel.includes(r.cliente)) return false;
     if (estSel.length && !estSel.includes(r.establecimiento)) return false;
+    if (tipoSel.length && !tipoSel.includes(r.tipo)) return false;
     return true;
   });
 
@@ -288,6 +293,7 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
   const hasta = document.getElementById("filtroHasta").value || "—";
   const clientesSel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
   const estSel = Array.from(document.getElementById("filtroEstablecimiento").selectedOptions).map((o) => o.value);
+  const tipoSel = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
   const generadoPor = document.getElementById("generadoPor").value;
 
   doc.setFontSize(9);
@@ -296,6 +302,7 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
     `Período: ${desde} a ${hasta}`,
     `Cliente(s): ${clientesSel.length ? clientesSel.join(", ") : "Todos"}`,
     `Establecimiento(s): ${estSel.length ? estSel.join(", ") : "Todos"}`,
+    `Tipo(s) de trabajo: ${tipoSel.length ? tipoSel.join(", ") : "Todos"}`,
     `Generado por: ${generadoPor}   |   Fecha de generación: ${new Date().toLocaleDateString("es-AR")}`
   ];
   doc.text(infoLineas, 40, 85);
@@ -317,7 +324,7 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
   const total = resultadosActuales.reduce((acc, r) => acc + r.importeActual, 0);
 
   doc.autoTable({
-    startY: 120,
+    startY: 135,
     head: [["Fecha", "Cliente", "Tipo de trabajo", "Establecimiento", "Cant.", "Precio unidad", "Subtotal", "Distancia", "Precio km", "Subtotal mov.", "Importe"]],
     body: filas,
     styles: { fontSize: 7.5, cellPadding: 4 },
@@ -335,6 +342,7 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
     desde, hasta,
     clientes: clientesSel.length ? clientesSel : ["Todos"],
     establecimientos: estSel.length ? estSel : ["Todos"],
+    tipos: tipoSel.length ? tipoSel : ["Todos"],
     cantidadTrabajos: resultadosActuales.length,
     total,
     archivo: nombreArchivo
@@ -391,6 +399,7 @@ async function cargarHistorial() {
         <div class="meta">
           <span class="pill">Clientes: ${escapeHtml((h.clientes || []).join(", "))}</span>
           <span class="pill">Establecimientos: ${escapeHtml((h.establecimientos || []).join(", "))}</span>
+          <span class="pill">Tipos: ${escapeHtml((h.tipos || ["Todos"]).join(", "))}</span>
         </div>
       </div>
     `).join("");
