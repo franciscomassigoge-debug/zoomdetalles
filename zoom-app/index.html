@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zoom Agricultura — Detalles Administración</title>
+<meta name="theme-color" content="#33473c">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="assets/icon-192.png">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="app-header">
+  <img src="assets/logo-app.jpg" alt="Zoom Agricultura" style="border-radius:6px;">
+  <div>
+    <h1>Zoom Agricultura</h1>
+    <div class="subtitulo">Detalles Administración</div>
+  </div>
+</header>
+
+<main>
+
+  <div id="bannerLocal" class="banner-local oculto">
+    Modo local: el historial y los precios guardados solo se ven en este dispositivo.
+    Para compartirlos con el resto del equipo, hay que configurar Firebase en
+    <code>firebase-config.js</code> (instrucciones dentro del archivo).
+  </div>
+
+  <!-- ===================== VISTA: DETALLE ===================== -->
+  <div id="vistaDetalle">
+
+    <section class="card">
+      <h2>1. Excel de datos</h2>
+      <div class="fila">
+        <div class="campo" style="flex:2;">
+          <label>Archivo cargado actualmente</label>
+          <div class="estado-excel" id="estadoExcel">Cargando archivo base…</div>
+        </div>
+        <div class="campo">
+          <label>Subir Excel actualizado</label>
+          <input type="file" id="inputExcel" accept=".xlsx,.xls">
+        </div>
+      </div>
+      <button class="secundario" id="btnUsarBase">Usar Excel base por defecto</button>
+    </section>
+
+    <section class="card">
+      <h2>2. Filtros</h2>
+      <div class="fila">
+        <div class="campo">
+          <label>Desde</label>
+          <input type="date" id="filtroDesde">
+        </div>
+        <div class="campo">
+          <label>Hasta</label>
+          <input type="date" id="filtroHasta">
+        </div>
+      </div>
+      <div class="fila">
+        <div class="campo">
+          <label>Cliente / Productor (ninguno seleccionado = todos)</label>
+          <select id="filtroCliente" multiple></select>
+        </div>
+        <div class="campo">
+          <label>Establecimiento (ninguno seleccionado = todos)</label>
+          <select id="filtroEstablecimiento" multiple></select>
+        </div>
+      </div>
+      <button class="primario" id="btnBuscar">Buscar trabajos</button>
+    </section>
+
+    <section class="card" id="cardResultados">
+      <h2>3. Resultados y ajuste de precios</h2>
+      <div id="resumenBusqueda" class="estado-excel"></div>
+      <div class="tabla-wrap">
+        <table id="tablaResultados">
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Cliente</th>
+              <th>Tipo de trabajo</th>
+              <th>Establecimiento</th>
+              <th>Cant.</th>
+              <th>Precio unidad</th>
+              <th>Subtotal</th>
+              <th>Distancia (km)</th>
+              <th>Precio km</th>
+              <th>Subtotal mov.</th>
+              <th>Importe</th>
+              <th>Origen</th>
+            </tr>
+          </thead>
+          <tbody id="cuerpoResultados">
+            <tr><td colspan="12" class="vacio">Todavía no buscaste trabajos.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="total-general" id="totalGeneral"></div>
+
+      <div class="fila" style="margin-top:12px;">
+        <div class="campo" style="max-width:260px;">
+          <label>Generado por</label>
+          <select id="generadoPor">
+            <option value="Francisco Massigoge">Francisco Massigoge</option>
+            <option value="Tomás Guichandut">Tomás Guichandut</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="acciones">
+        <button class="secundario" id="btnGuardarPrecios">Guardar precios ajustados (compartido)</button>
+        <button class="primario" id="btnGenerarPDF">Generar PDF</button>
+        <button class="secundario" id="btnExportarExcel">Descargar Excel actualizado</button>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ===================== VISTA: HISTORIAL ===================== -->
+  <div id="vistaHistorial" class="oculto">
+    <section class="card">
+      <h2>Historial de detalles generados</h2>
+      <div id="listaHistorial"></div>
+    </section>
+  </div>
+
+</main>
+
+<footer class="tabbar">
+  <button id="tabDetalle" class="activo">Detalle</button>
+  <button id="tabHistorial">Historial</button>
+</footer>
+
+<!-- Librerías -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+<!-- Firebase (compat, opcional — ver firebase-config.js) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script src="firebase-config.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch((err) => {
+      console.warn("No se pudo registrar el service worker:", err);
+    });
+  });
+}
+</script>
+
+</body>
+</html>
