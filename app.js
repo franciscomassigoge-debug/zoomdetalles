@@ -284,7 +284,8 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
   const logoBase64 = await imagenUrlABase64("assets/logo-pdf.jpg");
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  doc.addImage(logoBase64, "JPEG", 40, 25, 120, 40);
+  // El logo es cuadrado (1080x1080) — se mantiene 1:1 para que no se deforme.
+  doc.addImage(logoBase64, "JPEG", 40, 20, 50, 50);
   doc.setFontSize(16);
   doc.setTextColor(51, 71, 60);
   doc.text("Detalle de trabajos realizados", pageWidth - 40, 45, { align: "right" });
