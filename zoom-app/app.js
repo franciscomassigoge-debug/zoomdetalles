@@ -70,6 +70,8 @@ let workbookActual = null;
 let nombreArchivoActual = "";
 let registros = [];        // todos los registros parseados
 let resultadosActuales = []; // registros que matchean el último filtro (con precios editables)
+let ultimaBusqueda = null; // filtros EXACTOS con los que se generó resultadosActuales (para que el PDF
+                            // nunca describa un período distinto al de los datos que realmente contiene)
 
 // ---------- Utilidades ----------
 function getCell(ws, r, c) {
@@ -214,6 +216,7 @@ async function cargarExcelDesdeArrayBuffer(buffer, nombre) {
     `${nombre} — ${registros.length} trabajos encontrados (Fact. 1 + Fact. 2)`;
   poblarFiltros();
   resultadosActuales = [];
+  ultimaBusqueda = null;
   renderResultados([]);
 }
 
@@ -274,6 +277,16 @@ document.getElementById("btnBuscar").addEventListener("click", async () => {
 
   filtrados.sort((a, b) => a.fecha - b.fecha || a.cliente.localeCompare(b.cliente, "es"));
   resultadosActuales = filtrados;
+  // Se guarda una foto de los filtros usados en ESTA búsqueda. El PDF va a
+  // describir siempre esto, no lo que haya en pantalla al momento de generarlo
+  // (que puede haber cambiado sin volver a apretar "Buscar trabajos").
+  ultimaBusqueda = {
+    desdeStr: document.getElementById("filtroDesde").value || "—",
+    hastaStr: document.getElementById("filtroHasta").value || "—",
+    clientesSel: [...clientesSel],
+    estSel: [...estSel],
+    tipoSel: [...tipoSel]
+  };
   renderResultados(filtrados);
 
   document.getElementById("resumenBusqueda").textContent =
@@ -366,23 +379,52 @@ document.getElementById("btnGuardarPrecios").addEventListener("click", async () 
 
 // ---------- Generar PDF ----------
 document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
-  if (!resultadosActuales.length) {
+  if (!resultadosActuales.length || !ultimaBusqueda) {
     alert("Primero buscá trabajos con los filtros.");
     return;
   }
 
+  // Si los filtros en pantalla cambiaron después de la última vez que se
+  // apretó "Buscar trabajos", el PDF se generaría con datos de una búsqueda
+  // vieja aunque los campos muestren otra cosa. Se avisa antes de generar.
+  const filtrosEnPantalla = {
+    desdeStr: document.getElementById("filtroDesde").value || "—",
+    hastaStr: document.getElementById("filtroHasta").value || "—",
+    clientesSel: Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value),
+    estSel: Array.from(document.getElementById("filtroEstablecimiento").selectedOptions).map((o) => o.value),
+    tipoSel: Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value)
+  };
+  const mismaLista = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+  const filtrosSinCambios =
+    filtrosEnPantalla.desdeStr === ultimaBusqueda.desdeStr &&
+    filtrosEnPantalla.hastaStr === ultimaBusqueda.hastaStr &&
+    mismaLista(filtrosEnPantalla.clientesSel, ultimaBusqueda.clientesSel) &&
+    mismaLista(filtrosEnPantalla.estSel, ultimaBusqueda.estSel) &&
+    mismaLista(filtrosEnPantalla.tipoSel, ultimaBusqueda.tipoSel);
+  if (!filtrosSinCambios) {
+    const continuar = confirm(
+      `Cambiaste los filtros después de la última vez que apretaste "Buscar trabajos".\n` +
+      `El PDF se va a generar con los resultados de esa búsqueda anterior (Período ${ultimaBusqueda.desdeStr} a ${ultimaBusqueda.hastaStr}), no con lo que ves ahora en los filtros.\n\n` +
+      `¿Generar igual? (Cancelá y apretá "Buscar trabajos" de nuevo si querés los filtros actuales.)`
+    );
+    if (!continuar) return;
+  }
+
+  const desde = ultimaBusqueda.desdeStr;
+  const hasta = ultimaBusqueda.hastaStr;
+  const clientesSel = ultimaBusqueda.clientesSel;
+  const estSel = ultimaBusqueda.estSel;
+  const tipoSel = ultimaBusqueda.tipoSel;
+
   // Advertencia si la fecha "Desde" se superpone con un detalle ya generado
   // para el mismo cliente + tipo de trabajo (posible fecha duplicada).
-  const desdeChk = document.getElementById("filtroDesde").value;
-  const clienteChk = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
-  const tipoChk = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
-  if (desdeChk && clienteChk.length === 1 && tipoChk.length === 1) {
+  if (desde !== "—" && clientesSel.length === 1 && tipoSel.length === 1) {
     const mapaChk = await calcularUltimosPorClienteTipo();
-    const datosChk = mapaChk[`${clienteChk[0]}||${tipoChk[0]}`];
-    if (datosChk && desdeChk <= datosChk.fecha) {
+    const datosChk = mapaChk[`${clientesSel[0]}||${tipoSel[0]}`];
+    if (datosChk && desde <= datosChk.fecha) {
       const continuar = confirm(
-        `Ya existe un detalle de "${tipoChk[0]}" para ${clienteChk[0]} hasta el ${formatoFecha(new Date(datosChk.fecha + "T00:00:00Z"))}.\n` +
-        `La fecha "Desde" elegida (${formatoFecha(new Date(desdeChk + "T00:00:00Z"))}) se superpone con eso y podría duplicar trabajos.\n\n` +
+        `Ya existe un detalle de "${tipoSel[0]}" para ${clientesSel[0]} hasta el ${formatoFecha(new Date(datosChk.fecha + "T00:00:00Z"))}.\n` +
+        `La fecha "Desde" de esta búsqueda (${formatoFecha(new Date(desde + "T00:00:00Z"))}) se superpone con eso y podría duplicar trabajos.\n\n` +
         `¿Generar igual?`
       );
       if (!continuar) return;
@@ -401,11 +443,6 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
   doc.setTextColor(51, 71, 60);
   doc.text("Detalle de trabajos realizados", pageWidth - 40, 45, { align: "right" });
 
-  const desde = document.getElementById("filtroDesde").value || "—";
-  const hasta = document.getElementById("filtroHasta").value || "—";
-  const clientesSel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
-  const estSel = Array.from(document.getElementById("filtroEstablecimiento").selectedOptions).map((o) => o.value);
-  const tipoSel = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
   const generadoPor = document.getElementById("generadoPor").value;
 
   doc.setFontSize(9);
