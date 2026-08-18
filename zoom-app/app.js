@@ -148,58 +148,77 @@ function parsearWorkbook(wb) {
   return out;
 }
 
+// ---------- Multiselect propio (checkboxes) ----------
+// Reemplaza a <select multiple>: en iPhone/Safari ese control nativo se abre
+// como un picker de pantalla completa que ignora el filtro de texto y no
+// deja ver la búsqueda en vivo. Con una lista de checkboxes armada a mano
+// funciona igual en compu y en celular.
+const MS = {
+  // Arma las opciones de un contenedor, conservando las que ya estaban tildadas.
+  setOptions(contId, valores) {
+    const cont = document.getElementById(contId);
+    const previos = new Set(MS.getSeleccionados(contId));
+    if (!valores.length) {
+      cont.innerHTML = `<div class="ms-vacio">Sin opciones.</div>`;
+      return;
+    }
+    cont.innerHTML = valores.map((v) => `
+      <label class="ms-opcion">
+        <input type="checkbox" value="${escapeHtml(v)}"${previos.has(v) ? " checked" : ""}>
+        <span>${escapeHtml(v)}</span>
+      </label>
+    `).join("");
+  },
+  getSeleccionados(contId) {
+    return Array.from(document.getElementById(contId).querySelectorAll("input[type=checkbox]:checked")).map((i) => i.value);
+  },
+  limpiar(contId) {
+    document.getElementById(contId).querySelectorAll("input[type=checkbox]").forEach((i) => { i.checked = false; });
+  },
+  filtrarTexto(contId, texto) {
+    const q = normalizarTexto(texto);
+    document.getElementById(contId).querySelectorAll("label.ms-opcion").forEach((label) => {
+      const valor = label.querySelector("input").value;
+      label.style.display = !q || normalizarTexto(valor).includes(q) ? "" : "none";
+    });
+  }
+};
+
 function poblarFiltros() {
   const clientes = [...new Set(registros.map((r) => r.cliente))].sort((a, b) => a.localeCompare(b, "es"));
   const establecimientos = [...new Set(registros.map((r) => r.establecimiento).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
   const tipos = [...new Set(registros.map((r) => r.tipo).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
 
-  const selCliente = document.getElementById("filtroCliente");
-  const selEst = document.getElementById("filtroEstablecimiento");
-  const selTipo = document.getElementById("filtroTipo");
-  selCliente.innerHTML = clientes.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-  selEst.innerHTML = establecimientos.map((e) => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join("");
-  selTipo.innerHTML = tipos.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
+  MS.setOptions("filtroCliente", clientes);
+  MS.setOptions("filtroEstablecimiento", establecimientos);
+  MS.setOptions("filtroTipo", tipos);
 }
 
 // Destilda el/los cliente(s) seleccionados una vez generado un detalle o
 // exportado el Excel, para no arrastrarlo sin querer a la próxima búsqueda.
 function destildarCliente() {
-  const sel = document.getElementById("filtroCliente");
-  Array.from(sel.options).forEach((o) => { o.selected = false; });
+  MS.limpiar("filtroCliente");
   document.getElementById("avisoUltimoCliente").classList.add("oculto");
   actualizarEstablecimientosPorCliente();
 }
 
 // ---------- Buscador de texto dentro de los listados de Cliente y Establecimiento ----------
-function filtrarOpcionesPorTexto(inputId, selectId) {
-  document.getElementById(inputId).addEventListener("input", (e) => {
-    const q = normalizarTexto(e.target.value);
-    const opciones = document.getElementById(selectId).options;
-    for (const opt of opciones) {
-      const visible = !q || normalizarTexto(opt.value).includes(q);
-      opt.style.display = visible ? "" : "none";
-    }
-  });
-}
-filtrarOpcionesPorTexto("buscarClienteFiltro", "filtroCliente");
-filtrarOpcionesPorTexto("buscarEstablecimientoFiltro", "filtroEstablecimiento");
+document.getElementById("buscarClienteFiltro").addEventListener("input", (e) => {
+  MS.filtrarTexto("filtroCliente", e.target.value);
+});
+document.getElementById("buscarEstablecimientoFiltro").addEventListener("input", (e) => {
+  MS.filtrarTexto("filtroEstablecimiento", e.target.value);
+});
 
 // Filtra el listado de Establecimiento para que solo muestre los campos del
 // productor (o productores) seleccionados en Cliente/Productor. Sin ningún
 // cliente seleccionado, vuelve a mostrar todos los establecimientos.
 function actualizarEstablecimientosPorCliente() {
-  const clientesSel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
-  const selEst = document.getElementById("filtroEstablecimiento");
-  const previamenteSeleccionados = Array.from(selEst.selectedOptions).map((o) => o.value);
-
+  const clientesSel = MS.getSeleccionados("filtroCliente");
   const base = clientesSel.length ? registros.filter((r) => clientesSel.includes(r.cliente)) : registros;
   const establecimientos = [...new Set(base.map((r) => r.establecimiento).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "es"));
-
-  selEst.innerHTML = establecimientos.map((e) => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join("");
-  Array.from(selEst.options).forEach((o) => {
-    if (previamenteSeleccionados.includes(o.value)) o.selected = true;
-  });
+  MS.setOptions("filtroEstablecimiento", establecimientos);
 }
 
 function escapeHtml(s) {
@@ -250,9 +269,9 @@ document.getElementById("btnUsarBase").addEventListener("click", () => {
 document.getElementById("btnBuscar").addEventListener("click", async () => {
   const desde = document.getElementById("filtroDesde").value ? new Date(document.getElementById("filtroDesde").value + "T00:00:00Z") : null;
   const hasta = document.getElementById("filtroHasta").value ? new Date(document.getElementById("filtroHasta").value + "T23:59:59Z") : null;
-  const clientesSel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
-  const estSel = Array.from(document.getElementById("filtroEstablecimiento").selectedOptions).map((o) => o.value);
-  const tipoSel = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
+  const clientesSel = MS.getSeleccionados("filtroCliente");
+  const estSel = MS.getSeleccionados("filtroEstablecimiento");
+  const tipoSel = MS.getSeleccionados("filtroTipo");
 
   let filtrados = registros.filter((r) => {
     if (desde && r.fecha < desde) return false;
@@ -390,9 +409,9 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
   const filtrosEnPantalla = {
     desdeStr: document.getElementById("filtroDesde").value || "—",
     hastaStr: document.getElementById("filtroHasta").value || "—",
-    clientesSel: Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value),
-    estSel: Array.from(document.getElementById("filtroEstablecimiento").selectedOptions).map((o) => o.value),
-    tipoSel: Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value)
+    clientesSel: MS.getSeleccionados("filtroCliente"),
+    estSel: MS.getSeleccionados("filtroEstablecimiento"),
+    tipoSel: MS.getSeleccionados("filtroTipo")
   };
   const mismaLista = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
   const filtrosSinCambios =
@@ -718,8 +737,8 @@ async function calcularUltimosPorClienteTipo() {
 // Si se cambia de labor (tipo de trabajo), el aviso no se muestra: son cosas
 // distintas y no corresponde sugerir esa fecha.
 async function actualizarAvisoUltimoCliente() {
-  const selCliente = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
-  const selTipo = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
+  const selCliente = MS.getSeleccionados("filtroCliente");
+  const selTipo = MS.getSeleccionados("filtroTipo");
   const aviso = document.getElementById("avisoUltimoCliente");
   if (selCliente.length !== 1 || selTipo.length !== 1) {
     aviso.classList.add("oculto");
