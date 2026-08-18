@@ -3,7 +3,7 @@
 // una vez cargada por primera vez. Los datos (Excel subido, Firestore)
 // no se cachean acá.
 
-const CACHE_NAME = "zoom-detalles-v8";
+const CACHE_NAME = "zoom-detalles-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
