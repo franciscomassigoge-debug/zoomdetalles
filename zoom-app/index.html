@@ -62,17 +62,17 @@
         <div class="campo">
           <label>Cliente / Productor (ninguno seleccionado = todos)</label>
           <input type="text" id="buscarClienteFiltro" placeholder="Escribí para buscar…" style="margin-bottom:6px;">
-          <select id="filtroCliente" multiple></select>
+          <div id="filtroCliente" class="multiselect"></div>
           <div id="avisoUltimoCliente" class="aviso-ultimo oculto"></div>
         </div>
         <div class="campo">
           <label>Establecimiento (ninguno seleccionado = todos)</label>
           <input type="text" id="buscarEstablecimientoFiltro" placeholder="Escribí para buscar…" style="margin-bottom:6px;">
-          <select id="filtroEstablecimiento" multiple></select>
+          <div id="filtroEstablecimiento" class="multiselect"></div>
         </div>
         <div class="campo">
           <label>Tipo de trabajo (ninguno seleccionado = todos)</label>
-          <select id="filtroTipo" multiple></select>
+          <div id="filtroTipo" class="multiselect"></div>
         </div>
       </div>
       <button class="primario" id="btnBuscar">Buscar trabajos</button>
