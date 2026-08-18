@@ -633,6 +633,15 @@ document.getElementById("buscarHistorial").addEventListener("input", (e) => {
   if (historialCache.length) renderHistorial(e.target.value);
 });
 
+// Borrado manual de todo el historial (uso interno, para pruebas). No toca precios.
+document.getElementById("btnBorrarHistorial").addEventListener("click", async () => {
+  const continuar = confirm("Esto borra TODO el historial de detalles generados (para vos y para Tomás). No se puede deshacer. ¿Confirmás?");
+  if (!continuar) return;
+  const cantidad = await ZoomStore.borrarHistorial();
+  alert(`Se borraron ${cantidad} detalle(s) del historial.`);
+  cargarHistorial();
+});
+
 // Descarga de nuevo el PDF guardado en un ítem del historial.
 document.getElementById("listaHistorial").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-descargar-historial]");
