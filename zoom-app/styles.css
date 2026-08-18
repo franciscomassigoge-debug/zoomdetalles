@@ -257,6 +257,26 @@ footer.tabbar button.activo {
 
 .oculto { display: none !important; }
 
+.aviso-ultimo {
+  margin-top: 6px;
+  font-size: 12.5px;
+  background: #eef3ee;
+  border: 1px solid #cddccd;
+  color: var(--verde-oscuro);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.aviso-ultimo button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .total-general {
   font-size: 16px;
   font-weight: 700;
