@@ -71,12 +71,27 @@ const ZoomStore = (function () {
     return JSON.parse(localStorage.getItem(LS_HISTORIAL) || "[]");
   }
 
+  // Borra TODO el historial compartido (uso interno, para pruebas). No toca precios.
+  async function borrarHistorial() {
+    if (modo === "firebase") {
+      const snap = await db.collection("historial").get();
+      for (const doc of snap.docs) {
+        await doc.ref.delete();
+      }
+      return snap.docs.length;
+    }
+    const cantidad = JSON.parse(localStorage.getItem(LS_HISTORIAL) || "[]").length;
+    localStorage.removeItem(LS_HISTORIAL);
+    return cantidad;
+  }
+
   return {
     init,
     getPrecio,
     setPrecio,
     addHistorial,
     getHistorial,
+    borrarHistorial,
     get modo() { return modo; }
   };
 })();
