@@ -115,6 +115,43 @@ select[multiple] {
   min-height: 110px;
 }
 
+/* Multiselect propio (checkboxes), en vez de <select multiple> nativo:
+   en iPhone/Safari el select nativo se abre como un picker de pantalla
+   completa que ignora el filtro de texto, así que se resolvió con esto. */
+.multiselect {
+  min-height: 110px;
+  max-height: 170px;
+  overflow-y: auto;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: white;
+  padding: 4px;
+}
+.ms-opcion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  -webkit-tap-highlight-color: transparent;
+}
+.ms-opcion:hover {
+  background: var(--gris);
+}
+.ms-opcion input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  accent-color: var(--verde);
+}
+.ms-vacio {
+  padding: 8px;
+  color: #8a9490;
+  font-size: 13px;
+}
+
 button {
   cursor: pointer;
   border: none;
