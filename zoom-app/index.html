@@ -62,6 +62,7 @@
         <div class="campo">
           <label>Cliente / Productor (ninguno seleccionado = todos)</label>
           <select id="filtroCliente" multiple></select>
+          <div id="avisoUltimoCliente" class="aviso-ultimo oculto"></div>
         </div>
         <div class="campo">
           <label>Establecimiento (ninguno seleccionado = todos)</label>
@@ -122,6 +123,37 @@
 
   </div>
 
+  <!-- ===================== VISTA: ÚLTIMOS POR CLIENTE ===================== -->
+  <div id="vistaUltimos" class="oculto">
+    <section class="card">
+      <h2>Últimos detalles por cliente</h2>
+      <div class="estado-excel" style="margin-bottom:10px;">
+        Última fecha incluida en algún detalle ya generado para cada cliente — usalo como punto de partida para el próximo detalle y evitar superponer fechas.
+      </div>
+      <div class="fila">
+        <div class="campo">
+          <label>Buscar cliente</label>
+          <input type="text" id="buscarClienteUltimos" placeholder="Escribí un nombre…">
+        </div>
+      </div>
+      <div class="tabla-wrap">
+        <table id="tablaUltimos">
+          <thead>
+            <tr>
+              <th>Cliente</th>
+              <th>Última fecha detallada</th>
+              <th>Detalle generado el</th>
+              <th>Por</th>
+            </tr>
+          </thead>
+          <tbody id="cuerpoUltimos">
+            <tr><td colspan="4" class="vacio">Todavía no hay detalles generados.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
   <!-- ===================== VISTA: HISTORIAL ===================== -->
   <div id="vistaHistorial" class="oculto">
     <section class="card">
@@ -134,6 +166,7 @@
 
 <footer class="tabbar">
   <button id="tabDetalle" class="activo">Detalle</button>
+  <button id="tabUltimos">Últimos por cliente</button>
   <button id="tabHistorial">Historial</button>
 </footer>
 
