@@ -5,18 +5,60 @@
    compartido (Firebase Firestore) o local (localStorage).
    ============================================================ */
 
-// ---------- Mapa de columnas (igual en "Trabajos" y "Trabajos 2") ----------
-// Col A vacía. B=Fecha C=Cod.Trabajo D=Tipo E=Cod.Cliente F=Cliente
-// G=Establecimiento H=Cantidad(Ha/Día) I=Precio unidad J=Subtotal unidad
-// K=Cod.Vehiculo L=Vehiculo M=Distancia N=Precio km O=Subtotal mov. P=Importe
-const COLS = {
-  fecha: 1, codTrabajo: 2, tipo: 3, codCliente: 4, cliente: 5,
-  establecimiento: 6, cantidad: 7, precioUnidad: 8, subtotalUnidad: 9,
-  codVehiculo: 10, vehiculo: 11, distancia: 12, precioKm: 13,
-  subtotalMov: 14, importe: 15
+// ---------- Detección dinámica de columnas por nombre de encabezado ----------
+// En vez de asumir una posición fija (B, C, D...), la app busca en las primeras
+// filas de cada solapa cuál es la fila de encabezados y qué columna corresponde
+// a cada dato, por el texto del título. Así funciona sin importar el orden de
+// columnas del Excel, y no se rompe si el año que viene se reordenan o se
+// agregan/sacan columnas (como pasó de "Registro Zoom 25-26" a "26-27").
+const ALIAS_ENCABEZADOS = {
+  fecha: ["fecha"],
+  tipo: ["tipo de trabajo"],
+  cliente: ["cliente"],
+  establecimiento: ["establecimiento"],
+  cantidad: ["superficie", "dia", "dias", "días"],
+  precioUnidad: ["$/ha", "$/dia", "$/día"],
+  distancia: ["distancia"],
+  precioKm: ["$/km"],
+  subtotalUnidad: ["subtotal", "trabajo"],
+  subtotalMov: ["movilidad"],
+  importe: ["importe"]
 };
-const HEADER_ROW = 3; // fila 4 (0-indexed) = encabezados
-const DATA_START_ROW = 4; // fila 5 (0-indexed) = primer dato
+
+function normalizarTexto(s) {
+  return String(s).trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+// Busca la fila de encabezados (la que tiene una celda "Fecha") entre las
+// primeras filas de la solapa, y arma el mapa campo -> índice de columna.
+function detectarColumnas(ws) {
+  if (!ws || !ws["!ref"]) return null;
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  let headerRow = -1;
+  for (let r = range.s.r; r <= Math.min(range.s.r + 10, range.e.r); r++) {
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const v = getCell(ws, r, c);
+      if (typeof v === "string" && normalizarTexto(v) === "fecha") { headerRow = r; break; }
+    }
+    if (headerRow >= 0) break;
+  }
+  if (headerRow === -1) return null;
+
+  const cols = {};
+  for (let c = range.s.c; c <= range.e.c; c++) {
+    const v = getCell(ws, headerRow, c);
+    if (typeof v !== "string") continue;
+    const norm = normalizarTexto(v);
+    for (const campo of Object.keys(ALIAS_ENCABEZADOS)) {
+      if (cols[campo] !== undefined) continue;
+      if (ALIAS_ENCABEZADOS[campo].includes(norm)) cols[campo] = c;
+    }
+  }
+  // Campos imprescindibles para poder leer la solapa.
+  if (cols.fecha === undefined || cols.cliente === undefined || cols.tipo === undefined) return null;
+
+  return { headerRow, dataStartRow: headerRow + 1, cols };
+}
 
 const HOJAS = [
   { nombre: "Trabajos", unidadLabel: "ha", cantidadLabel: "Ha", origen: "Fact. 1 (Ha)" },
@@ -56,31 +98,37 @@ function claveReferencia(cliente, tipo) {
 // ---------- Parseo del Excel ----------
 function parsearWorkbook(wb) {
   const out = [];
+  const hojasNoDetectadas = [];
   HOJAS.forEach((hoja) => {
     const ws = wb.Sheets[hoja.nombre];
     if (!ws || !ws["!ref"]) return;
+    const det = detectarColumnas(ws);
+    if (!det) { hojasNoDetectadas.push(hoja.nombre); return; }
+    const cols = det.cols;
     const range = XLSX.utils.decode_range(ws["!ref"]);
-    for (let r = DATA_START_ROW; r <= range.e.r; r++) {
-      const fecha = getCell(ws, r, COLS.fecha);
-      const cliente = getCell(ws, r, COLS.cliente);
-      const tipo = getCell(ws, r, COLS.tipo);
+
+    for (let r = det.dataStartRow; r <= range.e.r; r++) {
+      const fecha = getCell(ws, r, cols.fecha);
+      const cliente = getCell(ws, r, cols.cliente);
+      const tipo = getCell(ws, r, cols.tipo);
       if (esVacio(fecha) || esVacio(cliente) || esVacio(tipo)) continue;
       if (!(fecha instanceof Date)) continue;
 
-      const cantidad = Number(getCell(ws, r, COLS.cantidad)) || 0;
-      const precioUnidad = Number(getCell(ws, r, COLS.precioUnidad)) || 0;
-      const distancia = Number(getCell(ws, r, COLS.distancia)) || 0;
-      const precioKm = Number(getCell(ws, r, COLS.precioKm)) || 0;
+      const cantidad = Number(getCell(ws, r, cols.cantidad)) || 0;
+      const precioUnidad = Number(getCell(ws, r, cols.precioUnidad)) || 0;
+      const distancia = cols.distancia !== undefined ? Number(getCell(ws, r, cols.distancia)) || 0 : 0;
+      const precioKm = cols.precioKm !== undefined ? Number(getCell(ws, r, cols.precioKm)) || 0 : 0;
 
       out.push({
         sheet: hoja.nombre,
         rowIdx: r,
+        cols, // se guarda para poder escribir de vuelta en la columna correcta al exportar
         origen: hoja.origen,
         unidadLabel: hoja.unidadLabel,
         cantidadLabel: hoja.cantidadLabel,
         fecha,
         cliente: String(cliente).trim(),
-        establecimiento: String(getCell(ws, r, COLS.establecimiento) || "").trim(),
+        establecimiento: String(getCell(ws, r, cols.establecimiento) || "").trim(),
         tipo: String(tipo).trim(),
         cantidad,
         precioUnidadBase: precioUnidad,
@@ -92,6 +140,9 @@ function parsearWorkbook(wb) {
       });
     }
   });
+  if (hojasNoDetectadas.length) {
+    console.warn("No se pudieron detectar los encabezados en:", hojasNoDetectadas.join(", "));
+  }
   return out;
 }
 
@@ -284,7 +335,8 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
   const logoBase64 = await imagenUrlABase64("assets/logo-pdf.jpg");
   const pageWidth = doc.internal.pageSize.getWidth();
 
-  doc.addImage(logoBase64, "JPEG", 40, 25, 120, 40);
+  // El logo es cuadrado (1080x1080) — se mantiene 1:1 para que no se deforme.
+  doc.addImage(logoBase64, "JPEG", 40, 20, 50, 50);
   doc.setFontSize(16);
   doc.setTextColor(51, 71, 60);
   doc.text("Detalle de trabajos realizados", pageWidth - 40, 45, { align: "right" });
@@ -323,6 +375,15 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
 
   const total = resultadosActuales.reduce((acc, r) => acc + r.importeActual, 0);
 
+  // Última fecha real incluida en el detalle, por cliente (para "Últimos por cliente").
+  const porCliente = {};
+  resultadosActuales.forEach((r) => {
+    const fechaStr = r.fecha.toISOString().slice(0, 10);
+    if (!porCliente[r.cliente] || fechaStr > porCliente[r.cliente]) {
+      porCliente[r.cliente] = fechaStr;
+    }
+  });
+
   doc.autoTable({
     startY: 135,
     head: [["Fecha", "Cliente", "Tipo de trabajo", "Establecimiento", "Cant.", "Precio unidad", "Subtotal", "Distancia", "Precio km", "Subtotal mov.", "Importe"]],
@@ -345,7 +406,8 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
     tipos: tipoSel.length ? tipoSel : ["Todos"],
     cantidadTrabajos: resultadosActuales.length,
     total,
-    archivo: nombreArchivo
+    archivo: nombreArchivo,
+    porCliente
   });
   cargarHistorial();
 });
@@ -369,11 +431,12 @@ document.getElementById("btnExportarExcel").addEventListener("click", () => {
   }
   resultadosActuales.forEach((r) => {
     const ws = workbookActual.Sheets[r.sheet];
-    setCellNum(ws, r.rowIdx, COLS.precioUnidad, r.precioUnidadActual);
-    setCellNum(ws, r.rowIdx, COLS.subtotalUnidad, r.subtotalUnidadActual);
-    setCellNum(ws, r.rowIdx, COLS.precioKm, r.precioKmActual);
-    setCellNum(ws, r.rowIdx, COLS.subtotalMov, r.subtotalMovActual);
-    setCellNum(ws, r.rowIdx, COLS.importe, r.importeActual);
+    const cols = r.cols || {};
+    if (cols.precioUnidad !== undefined) setCellNum(ws, r.rowIdx, cols.precioUnidad, r.precioUnidadActual);
+    if (cols.subtotalUnidad !== undefined) setCellNum(ws, r.rowIdx, cols.subtotalUnidad, r.subtotalUnidadActual);
+    if (cols.precioKm !== undefined) setCellNum(ws, r.rowIdx, cols.precioKm, r.precioKmActual);
+    if (cols.subtotalMov !== undefined) setCellNum(ws, r.rowIdx, cols.subtotalMov, r.subtotalMovActual);
+    if (cols.importe !== undefined) setCellNum(ws, r.rowIdx, cols.importe, r.importeActual);
   });
   const nombreArchivo = `Registro_Zoom_actualizado_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(workbookActual, nombreArchivo);
@@ -405,18 +468,101 @@ async function cargarHistorial() {
     `).join("");
 }
 
+// ---------- Últimos detalles por cliente ----------
+let ultimosPorClienteCache = null; // se recalcula cada vez que se entra a la solapa
+
+async function calcularUltimosPorCliente() {
+  const historial = await ZoomStore.getHistorial();
+  const porCliente = {}; // cliente -> { fecha, generadoEl, generadoPor }
+  historial.forEach((h) => {
+    if (!h.porCliente) return; // detalles viejos generados antes de este agregado
+    Object.entries(h.porCliente).forEach(([cliente, fechaStr]) => {
+      const actual = porCliente[cliente];
+      if (!actual || fechaStr > actual.fecha) {
+        porCliente[cliente] = { fecha: fechaStr, generadoEl: h.fecha, generadoPor: h.generadoPor };
+      }
+    });
+  });
+  return Object.entries(porCliente)
+    .map(([cliente, datos]) => ({ cliente, ...datos }))
+    .sort((a, b) => a.cliente.localeCompare(b.cliente, "es"));
+}
+
+function renderUltimos(lista, filtroTexto) {
+  const cuerpo = document.getElementById("cuerpoUltimos");
+  const texto = (filtroTexto || "").trim().toLowerCase();
+  const filtrada = texto ? lista.filter((x) => x.cliente.toLowerCase().includes(texto)) : lista;
+
+  if (!filtrada.length) {
+    cuerpo.innerHTML = `<tr><td colspan="4" class="vacio">${lista.length ? "Ningún cliente coincide con la búsqueda." : "Todavía no hay detalles generados."}</td></tr>`;
+    return;
+  }
+  cuerpo.innerHTML = filtrada.map((x) => `
+    <tr>
+      <td>${escapeHtml(x.cliente)}</td>
+      <td><strong>${formatoFecha(new Date(x.fecha + "T00:00:00Z"))}</strong></td>
+      <td>${new Date(x.generadoEl).toLocaleDateString("es-AR")}</td>
+      <td>${escapeHtml(x.generadoPor || "—")}</td>
+    </tr>
+  `).join("");
+}
+
+document.getElementById("buscarClienteUltimos").addEventListener("input", (e) => {
+  if (ultimosPorClienteCache) renderUltimos(ultimosPorClienteCache, e.target.value);
+});
+
+// Aviso de "última fecha detallada" cuando se elige un solo cliente en Filtros.
+document.getElementById("filtroCliente").addEventListener("change", async () => {
+  const sel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
+  const aviso = document.getElementById("avisoUltimoCliente");
+  if (sel.length !== 1) {
+    aviso.classList.add("oculto");
+    return;
+  }
+  const lista = await calcularUltimosPorCliente();
+  const datos = lista.find((x) => x.cliente === sel[0]);
+  if (!datos) {
+    aviso.classList.add("oculto");
+    return;
+  }
+  aviso.classList.remove("oculto");
+  aviso.innerHTML = `
+    <span>Último detalle a <strong>${escapeHtml(sel[0])}</strong>: hasta el <strong>${formatoFecha(new Date(datos.fecha + "T00:00:00Z"))}</strong>.</span>
+    <button type="button" class="secundario" id="btnUsarUltimaFecha">Usar como "Desde"</button>
+  `;
+  document.getElementById("btnUsarUltimaFecha").addEventListener("click", () => {
+    const siguiente = new Date(datos.fecha + "T00:00:00Z");
+    siguiente.setUTCDate(siguiente.getUTCDate() + 1);
+    document.getElementById("filtroDesde").value = siguiente.toISOString().slice(0, 10);
+  });
+});
+
 // ---------- Navegación entre vistas ----------
-document.getElementById("tabDetalle").addEventListener("click", () => {
-  document.getElementById("vistaDetalle").classList.remove("oculto");
+function ocultarTodasLasVistas() {
+  document.getElementById("vistaDetalle").classList.add("oculto");
+  document.getElementById("vistaUltimos").classList.add("oculto");
   document.getElementById("vistaHistorial").classList.add("oculto");
-  document.getElementById("tabDetalle").classList.add("activo");
+  document.getElementById("tabDetalle").classList.remove("activo");
+  document.getElementById("tabUltimos").classList.remove("activo");
   document.getElementById("tabHistorial").classList.remove("activo");
+}
+
+document.getElementById("tabDetalle").addEventListener("click", () => {
+  ocultarTodasLasVistas();
+  document.getElementById("vistaDetalle").classList.remove("oculto");
+  document.getElementById("tabDetalle").classList.add("activo");
+});
+document.getElementById("tabUltimos").addEventListener("click", async () => {
+  ocultarTodasLasVistas();
+  document.getElementById("vistaUltimos").classList.remove("oculto");
+  document.getElementById("tabUltimos").classList.add("activo");
+  ultimosPorClienteCache = await calcularUltimosPorCliente();
+  renderUltimos(ultimosPorClienteCache, document.getElementById("buscarClienteUltimos").value);
 });
 document.getElementById("tabHistorial").addEventListener("click", async () => {
-  document.getElementById("vistaDetalle").classList.add("oculto");
+  ocultarTodasLasVistas();
   document.getElementById("vistaHistorial").classList.remove("oculto");
   document.getElementById("tabHistorial").classList.add("activo");
-  document.getElementById("tabDetalle").classList.remove("activo");
   await cargarHistorial();
 });
 
