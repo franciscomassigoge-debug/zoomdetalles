@@ -32,10 +32,10 @@
  */
 
 window.ZOOM_FIREBASE_CONFIG = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:xxxxxxxxxxxxxxxxxxxxxx"
+  apiKey: "AIzaSyC3b8bv6Dt01M8Qwne27sBO8NIp8f3VM-E",
+  authDomain: "zoom-agricultura.firebaseapp.com",
+  projectId: "zoom-agricultura",
+  storageBucket: "zoom-agricultura.firebasestorage.app",
+  messagingSenderId: "670474028495",
+  appId: "1:670474028495:web:9762ccd96a219658f53eba"
 };
