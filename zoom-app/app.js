@@ -159,6 +159,47 @@ function poblarFiltros() {
   selTipo.innerHTML = tipos.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join("");
 }
 
+// Destilda el/los cliente(s) seleccionados una vez generado un detalle o
+// exportado el Excel, para no arrastrarlo sin querer a la próxima búsqueda.
+function destildarCliente() {
+  const sel = document.getElementById("filtroCliente");
+  Array.from(sel.options).forEach((o) => { o.selected = false; });
+  document.getElementById("avisoUltimoCliente").classList.add("oculto");
+  actualizarEstablecimientosPorCliente();
+}
+
+// ---------- Buscador de texto dentro de los listados de Cliente y Establecimiento ----------
+function filtrarOpcionesPorTexto(inputId, selectId) {
+  document.getElementById(inputId).addEventListener("input", (e) => {
+    const q = normalizarTexto(e.target.value);
+    const opciones = document.getElementById(selectId).options;
+    for (const opt of opciones) {
+      const visible = !q || normalizarTexto(opt.value).includes(q);
+      opt.style.display = visible ? "" : "none";
+    }
+  });
+}
+filtrarOpcionesPorTexto("buscarClienteFiltro", "filtroCliente");
+filtrarOpcionesPorTexto("buscarEstablecimientoFiltro", "filtroEstablecimiento");
+
+// Filtra el listado de Establecimiento para que solo muestre los campos del
+// productor (o productores) seleccionados en Cliente/Productor. Sin ningún
+// cliente seleccionado, vuelve a mostrar todos los establecimientos.
+function actualizarEstablecimientosPorCliente() {
+  const clientesSel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
+  const selEst = document.getElementById("filtroEstablecimiento");
+  const previamenteSeleccionados = Array.from(selEst.selectedOptions).map((o) => o.value);
+
+  const base = clientesSel.length ? registros.filter((r) => clientesSel.includes(r.cliente)) : registros;
+  const establecimientos = [...new Set(base.map((r) => r.establecimiento).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "es"));
+
+  selEst.innerHTML = establecimientos.map((e) => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join("");
+  Array.from(selEst.options).forEach((o) => {
+    if (previamenteSeleccionados.includes(o.value)) o.selected = true;
+  });
+}
+
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
 }
@@ -329,6 +370,25 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
     alert("Primero buscá trabajos con los filtros.");
     return;
   }
+
+  // Advertencia si la fecha "Desde" se superpone con un detalle ya generado
+  // para el mismo cliente + tipo de trabajo (posible fecha duplicada).
+  const desdeChk = document.getElementById("filtroDesde").value;
+  const clienteChk = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
+  const tipoChk = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
+  if (desdeChk && clienteChk.length === 1 && tipoChk.length === 1) {
+    const mapaChk = await calcularUltimosPorClienteTipo();
+    const datosChk = mapaChk[`${clienteChk[0]}||${tipoChk[0]}`];
+    if (datosChk && desdeChk <= datosChk.fecha) {
+      const continuar = confirm(
+        `Ya existe un detalle de "${tipoChk[0]}" para ${clienteChk[0]} hasta el ${formatoFecha(new Date(datosChk.fecha + "T00:00:00Z"))}.\n` +
+        `La fecha "Desde" elegida (${formatoFecha(new Date(desdeChk + "T00:00:00Z"))}) se superpone con eso y podría duplicar trabajos.\n\n` +
+        `¿Generar igual?`
+      );
+      if (!continuar) return;
+    }
+  }
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
 
@@ -377,10 +437,17 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
 
   // Última fecha real incluida en el detalle, por cliente (para "Últimos por cliente").
   const porCliente = {};
+  // Ídem, pero por cliente + tipo de trabajo (para que "Usar como Desde" en
+  // Filtros solo sugiera la fecha cuando se repite la misma labor).
+  const porClienteTipo = {};
   resultadosActuales.forEach((r) => {
     const fechaStr = r.fecha.toISOString().slice(0, 10);
     if (!porCliente[r.cliente] || fechaStr > porCliente[r.cliente]) {
       porCliente[r.cliente] = fechaStr;
+    }
+    const clave = `${r.cliente}||${r.tipo}`;
+    if (!porClienteTipo[clave] || fechaStr > porClienteTipo[clave]) {
+      porClienteTipo[clave] = fechaStr;
     }
   });
 
@@ -394,8 +461,35 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
     footStyles: { fillColor: [231, 227, 216], textColor: [37, 54, 48], fontStyle: "bold" }
   });
 
-  const nombreArchivo = `Detalle_ZoomAgricultura_${new Date().toISOString().slice(0, 10)}.pdf`;
+  // Nombre y título visibles antes de abrir el archivo: cliente, campo, trabajo y fechas.
+  const limpiarNombre = (txt) => String(txt).trim().replace(/[\\/:*?"<>|]/g, "").replace(/\s+/g, "-");
+  const listaParaNombre = (arr, maxItems = 3) => {
+    if (!arr.length) return "Todos";
+    const limpio = arr.map(limpiarNombre);
+    if (limpio.length <= maxItems) return limpio.join("-");
+    return limpio.slice(0, maxItems).join("-") + `-y${limpio.length - maxItems}mas`;
+  };
+  const clienteTxt = listaParaNombre(clientesSel);
+  const campoTxt = listaParaNombre(estSel);
+  const trabajoTxt = listaParaNombre(tipoSel);
+  const desdeTxt = desde !== "—" ? desde : "inicio";
+  const hastaTxt = hasta !== "—" ? hasta : "hoy";
+
+  doc.setProperties({
+    title: `${clienteTxt} - ${campoTxt} - ${trabajoTxt} (${desdeTxt} a ${hastaTxt})`
+  });
+
+  const nombreArchivo = `Detalle_${clienteTxt}_${campoTxt}_${trabajoTxt}_${desdeTxt}_a_${hastaTxt}.pdf`;
   doc.save(nombreArchivo);
+
+  // Se guarda una copia del PDF en el historial (si no es demasiado pesada)
+  // para poder volver a descargarlo después sin tener que rehacer el detalle.
+  const pdfDataUri = doc.output("datauristring");
+  const LIMITE_PDF_HISTORIAL = 900000; // ~900 KB en base64 (Firestore admite hasta 1 MiB por documento)
+  const pdfParaGuardar = pdfDataUri.length <= LIMITE_PDF_HISTORIAL ? pdfDataUri : null;
+  if (!pdfParaGuardar) {
+    console.warn("El PDF es muy pesado para guardarse en el historial compartido; solo queda la copia descargada localmente.");
+  }
 
   await ZoomStore.addHistorial({
     fecha: new Date().toISOString(),
@@ -407,9 +501,12 @@ document.getElementById("btnGenerarPDF").addEventListener("click", async () => {
     cantidadTrabajos: resultadosActuales.length,
     total,
     archivo: nombreArchivo,
-    porCliente
+    porCliente,
+    porClienteTipo,
+    pdfBase64: pdfParaGuardar
   });
   cargarHistorial();
+  destildarCliente();
 });
 
 function imagenUrlABase64(url) {
@@ -440,19 +537,41 @@ document.getElementById("btnExportarExcel").addEventListener("click", () => {
   });
   const nombreArchivo = `Registro_Zoom_actualizado_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(workbookActual, nombreArchivo);
+  destildarCliente();
 });
 
 // ---------- Historial ----------
+let historialCache = []; // permite volver a descargar el PDF de una fila sin recargar todo
+
 async function cargarHistorial() {
   const historial = await ZoomStore.getHistorial();
+  historialCache = historial.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  renderHistorial(document.getElementById("buscarHistorial").value);
+}
+
+function renderHistorial(filtroTexto) {
   const cont = document.getElementById("listaHistorial");
-  if (!historial.length) {
+  if (!historialCache.length) {
     cont.innerHTML = `<div class="vacio">Todavía no se generó ningún detalle.</div>`;
     return;
   }
-  cont.innerHTML = historial
-    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
-    .map((h) => `
+  const q = normalizarTexto(filtroTexto || "");
+  const items = historialCache
+    .map((h, idx) => ({ h, idx }))
+    .filter(({ h }) => {
+      if (!q) return true;
+      const texto = normalizarTexto(
+        [...(h.clientes || []), ...(h.establecimientos || []), ...(h.tipos || []), h.generadoPor || ""].join(" ")
+      );
+      return texto.includes(q);
+    });
+
+  if (!items.length) {
+    cont.innerHTML = `<div class="vacio">Ningún detalle coincide con la búsqueda.</div>`;
+    return;
+  }
+
+  cont.innerHTML = items.map(({ h, idx }) => `
       <div class="historial-item">
         <div><strong>${new Date(h.fecha).toLocaleString("es-AR")}</strong> — ${escapeHtml(h.generadoPor || "—")}</div>
         <div class="meta">
@@ -464,28 +583,46 @@ async function cargarHistorial() {
           <span class="pill">Establecimientos: ${escapeHtml((h.establecimientos || []).join(", "))}</span>
           <span class="pill">Tipos: ${escapeHtml((h.tipos || ["Todos"]).join(", "))}</span>
         </div>
+        <div class="meta">
+          ${h.pdfBase64
+            ? `<button type="button" class="secundario" data-descargar-historial="${idx}">Descargar PDF</button>`
+            : `<span class="vacio">PDF no disponible para volver a descargar.</span>`}
+        </div>
       </div>
     `).join("");
 }
 
+document.getElementById("buscarHistorial").addEventListener("input", (e) => {
+  if (historialCache.length) renderHistorial(e.target.value);
+});
+
+// Descarga de nuevo el PDF guardado en un ítem del historial.
+document.getElementById("listaHistorial").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-descargar-historial]");
+  if (!btn) return;
+  const h = historialCache[Number(btn.getAttribute("data-descargar-historial"))];
+  if (!h || !h.pdfBase64) return;
+  const a = document.createElement("a");
+  a.href = h.pdfBase64;
+  a.download = h.archivo || "detalle.pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
 // ---------- Últimos detalles por cliente ----------
 let ultimosPorClienteCache = null; // se recalcula cada vez que se entra a la solapa
 
+// Desglosado por cliente + tipo de trabajo (usa la misma fuente que el aviso
+// de Filtros, calcularUltimosPorClienteTipo, definida más abajo).
 async function calcularUltimosPorCliente() {
-  const historial = await ZoomStore.getHistorial();
-  const porCliente = {}; // cliente -> { fecha, generadoEl, generadoPor }
-  historial.forEach((h) => {
-    if (!h.porCliente) return; // detalles viejos generados antes de este agregado
-    Object.entries(h.porCliente).forEach(([cliente, fechaStr]) => {
-      const actual = porCliente[cliente];
-      if (!actual || fechaStr > actual.fecha) {
-        porCliente[cliente] = { fecha: fechaStr, generadoEl: h.fecha, generadoPor: h.generadoPor };
-      }
-    });
-  });
-  return Object.entries(porCliente)
-    .map(([cliente, datos]) => ({ cliente, ...datos }))
-    .sort((a, b) => a.cliente.localeCompare(b.cliente, "es"));
+  const mapa = await calcularUltimosPorClienteTipo();
+  return Object.entries(mapa)
+    .map(([clave, datos]) => {
+      const [cliente, tipo] = clave.split("||");
+      return { cliente, tipo, ...datos };
+    })
+    .sort((a, b) => a.cliente.localeCompare(b.cliente, "es") || a.tipo.localeCompare(b.tipo, "es"));
 }
 
 function renderUltimos(lista, filtroTexto) {
@@ -494,12 +631,13 @@ function renderUltimos(lista, filtroTexto) {
   const filtrada = texto ? lista.filter((x) => x.cliente.toLowerCase().includes(texto)) : lista;
 
   if (!filtrada.length) {
-    cuerpo.innerHTML = `<tr><td colspan="4" class="vacio">${lista.length ? "Ningún cliente coincide con la búsqueda." : "Todavía no hay detalles generados."}</td></tr>`;
+    cuerpo.innerHTML = `<tr><td colspan="5" class="vacio">${lista.length ? "Ningún cliente coincide con la búsqueda." : "Todavía no hay detalles generados."}</td></tr>`;
     return;
   }
   cuerpo.innerHTML = filtrada.map((x) => `
     <tr>
       <td>${escapeHtml(x.cliente)}</td>
+      <td>${escapeHtml(x.tipo || "—")}</td>
       <td><strong>${formatoFecha(new Date(x.fecha + "T00:00:00Z"))}</strong></td>
       <td>${new Date(x.generadoEl).toLocaleDateString("es-AR")}</td>
       <td>${escapeHtml(x.generadoPor || "—")}</td>
@@ -511,23 +649,45 @@ document.getElementById("buscarClienteUltimos").addEventListener("input", (e) =>
   if (ultimosPorClienteCache) renderUltimos(ultimosPorClienteCache, e.target.value);
 });
 
-// Aviso de "última fecha detallada" cuando se elige un solo cliente en Filtros.
-document.getElementById("filtroCliente").addEventListener("change", async () => {
-  const sel = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
+// Última fecha detallada por cliente + tipo de trabajo. Fuente única usada
+// tanto por calcularUltimosPorCliente (solapa "Últimos por cliente") como
+// por el aviso "Usar como Desde" en Filtros y la advertencia al generar PDF.
+async function calcularUltimosPorClienteTipo() {
+  const historial = await ZoomStore.getHistorial();
+  const mapa = {}; // "cliente||tipo" -> { fecha, generadoEl, generadoPor }
+  historial.forEach((h) => {
+    if (!h.porClienteTipo) return; // detalles viejos generados antes de este agregado
+    Object.entries(h.porClienteTipo).forEach(([clave, fechaStr]) => {
+      const actual = mapa[clave];
+      if (!actual || fechaStr > actual.fecha) {
+        mapa[clave] = { fecha: fechaStr, generadoEl: h.fecha, generadoPor: h.generadoPor };
+      }
+    });
+  });
+  return mapa;
+}
+
+// Aviso de "última fecha detallada" — solo aparece cuando hay un único cliente
+// Y un único tipo de trabajo seleccionados, y coinciden con una labor anterior.
+// Si se cambia de labor (tipo de trabajo), el aviso no se muestra: son cosas
+// distintas y no corresponde sugerir esa fecha.
+async function actualizarAvisoUltimoCliente() {
+  const selCliente = Array.from(document.getElementById("filtroCliente").selectedOptions).map((o) => o.value);
+  const selTipo = Array.from(document.getElementById("filtroTipo").selectedOptions).map((o) => o.value);
   const aviso = document.getElementById("avisoUltimoCliente");
-  if (sel.length !== 1) {
+  if (selCliente.length !== 1 || selTipo.length !== 1) {
     aviso.classList.add("oculto");
     return;
   }
-  const lista = await calcularUltimosPorCliente();
-  const datos = lista.find((x) => x.cliente === sel[0]);
+  const mapa = await calcularUltimosPorClienteTipo();
+  const datos = mapa[`${selCliente[0]}||${selTipo[0]}`];
   if (!datos) {
     aviso.classList.add("oculto");
     return;
   }
   aviso.classList.remove("oculto");
   aviso.innerHTML = `
-    <span>Último detalle a <strong>${escapeHtml(sel[0])}</strong>: hasta el <strong>${formatoFecha(new Date(datos.fecha + "T00:00:00Z"))}</strong>.</span>
+    <span>Último detalle de <strong>${escapeHtml(selTipo[0])}</strong> a <strong>${escapeHtml(selCliente[0])}</strong>: hasta el <strong>${formatoFecha(new Date(datos.fecha + "T00:00:00Z"))}</strong>.</span>
     <button type="button" class="secundario" id="btnUsarUltimaFecha">Usar como "Desde"</button>
   `;
   document.getElementById("btnUsarUltimaFecha").addEventListener("click", () => {
@@ -535,7 +695,15 @@ document.getElementById("filtroCliente").addEventListener("change", async () => 
     siguiente.setUTCDate(siguiente.getUTCDate() + 1);
     document.getElementById("filtroDesde").value = siguiente.toISOString().slice(0, 10);
   });
+}
+
+// Filtrado automático de Establecimiento según el/los cliente(s) elegidos,
+// y recálculo del aviso de última fecha (cliente y tipo de trabajo).
+document.getElementById("filtroCliente").addEventListener("change", () => {
+  actualizarEstablecimientosPorCliente();
+  actualizarAvisoUltimoCliente();
 });
+document.getElementById("filtroTipo").addEventListener("change", actualizarAvisoUltimoCliente);
 
 // ---------- Navegación entre vistas ----------
 function ocultarTodasLasVistas() {
