@@ -61,11 +61,13 @@
       <div class="fila">
         <div class="campo">
           <label>Cliente / Productor (ninguno seleccionado = todos)</label>
+          <input type="text" id="buscarClienteFiltro" placeholder="Escribí para buscar…" style="margin-bottom:6px;">
           <select id="filtroCliente" multiple></select>
           <div id="avisoUltimoCliente" class="aviso-ultimo oculto"></div>
         </div>
         <div class="campo">
           <label>Establecimiento (ninguno seleccionado = todos)</label>
+          <input type="text" id="buscarEstablecimientoFiltro" placeholder="Escribí para buscar…" style="margin-bottom:6px;">
           <select id="filtroEstablecimiento" multiple></select>
         </div>
         <div class="campo">
@@ -141,13 +143,14 @@
           <thead>
             <tr>
               <th>Cliente</th>
+              <th>Tipo de trabajo</th>
               <th>Última fecha detallada</th>
               <th>Detalle generado el</th>
               <th>Por</th>
             </tr>
           </thead>
           <tbody id="cuerpoUltimos">
-            <tr><td colspan="4" class="vacio">Todavía no hay detalles generados.</td></tr>
+            <tr><td colspan="5" class="vacio">Todavía no hay detalles generados.</td></tr>
           </tbody>
         </table>
       </div>
@@ -158,6 +161,12 @@
   <div id="vistaHistorial" class="oculto">
     <section class="card">
       <h2>Historial de detalles generados</h2>
+      <div class="fila">
+        <div class="campo">
+          <label>Buscar (cliente, establecimiento, tipo o quién lo generó)</label>
+          <input type="text" id="buscarHistorial" placeholder="Escribí para buscar…">
+        </div>
+      </div>
       <div id="listaHistorial"></div>
     </section>
   </div>
